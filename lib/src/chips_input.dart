@@ -76,16 +76,13 @@ class ChipsInput<T> extends StatefulWidget {
   final FocusNode? focusNode;
   final List<T>? initialSuggestions;
 
-  // final Color cursorColor;
-
   final TextCapitalization textCapitalization;
 
   @override
   ChipsInputState<T> createState() => ChipsInputState<T>();
 }
 
-class ChipsInputState<T> extends State<ChipsInput<T>>
-    implements TextInputClient {
+class ChipsInputState<T> extends State<ChipsInput<T>> implements TextInputClient {
   Set<T> _chips = <T>{};
   List<T?>? _suggestions;
   final StreamController<List<T?>?> _suggestionsStreamController =
@@ -193,7 +190,7 @@ class ChipsInputState<T> extends State<ChipsInput<T>>
               min(suggestionBoxHeight, widget.suggestionsBoxMaxHeight!);
         }
         final showTop = topAvailableSpace > bottomAvailableSpace;
-        // print("showTop: $showTop" );
+
         final compositedTransformFollowerOffset =
             showTop ? Offset(0, -size.height) : Offset.zero;
 
@@ -301,210 +298,134 @@ class ChipsInputState<T> extends State<ChipsInput<T>>
           results.where((r) => !_chips.contains(r)).toList(growable: false));
     }
     _suggestionsStreamController.add(_suggestions ?? []);
-    if (!_suggestionsBoxController.isOpened && !_hasReachedMaxChips) {
+    if (!_suggestionsBoxController.isOpened) {
       _suggestionsBoxController.open();
+    }
+  }
+
+  @override
+  void didChangeInputControl(
+      TextInputControl? oldControl, TextInputControl? newControl) {
+    // Si nécessaire, implémentez des actions sur les changements de contrôle
+  }
+
+  @override
+  void insertContent(KeyboardInsertedContent content) {
+    // Implémentez la logique d'insertion de contenu si nécessaire
+  }
+
+  @override
+  void performSelector(String selectorName) {
+    // Implémentez la logique d'exécution d'actions spécifiques si nécessaire
+  }
+
+  void _updateTextInputState({bool replaceText = false}) {
+    if (_hasInputConnection) {
+      final replacementText = _chips.isEmpty
+          ? ''
+          : _chips
+              .map((e) => widget.chipBuilder(context, this, e))
+              .join('');
+      final text = TextEditingValue(
+        text: replacementText,
+        selection: TextSelection.collapsed(offset: replacementText.length),
+      );
+      _textInputConnection?.setEditingState(text);
     }
   }
 
   void _closeInputConnectionIfNeeded() {
     if (_hasInputConnection) {
-      _textInputConnection!.close();
+      _textInputConnection?.close();
       _textInputConnection = null;
     }
   }
 
   @override
-  void updateEditingValue(TextEditingValue value) {
-    //print("updateEditingValue FIRED with ${value.text}");
-    // _receivedRemoteTextEditingValue = value;
-    final oldTextEditingValue = _value;
-    if (value.text != oldTextEditingValue.text) {
-      setState(() => _value = value);
-      if (value.replacementCharactersCount <
-          oldTextEditingValue.replacementCharactersCount) {
-        final removedChip = _chips.last;
-        setState(() =>
-            _chips = Set.of(_chips.take(value.replacementCharactersCount)));
-        widget.onChanged(_chips.toList(growable: false));
-        String? putText = '';
-        if (widget.allowChipEditing && _enteredTexts.containsKey(removedChip)) {
-          putText = _enteredTexts[removedChip]!;
-          _enteredTexts.remove(removedChip);
-        }
-        _updateTextInputState(putText: putText);
-      } else {
-        _updateTextInputState();
-      }
-      _onSearchChanged(_value.normalCharactersText);
-    }
-  }
-
-  void _updateTextInputState({replaceText = false, putText = ''}) {
-    if (replaceText || putText != '') {
-      final updatedText =
-          String.fromCharCodes(_chips.map((_) => kObjectReplacementChar)) +
-              (replaceText ? '' : _value.normalCharactersText) +
-              putText;
-      setState(() => _value = _value.copyWith(
-            text: updatedText,
-            selection: TextSelection.collapsed(offset: updatedText.length),
-            //composing: TextRange(start: 0, end: text.length),
-            composing: TextRange.empty,
-          ));
-    }
-    _closeInputConnectionIfNeeded(); //Hack for #34 (https://github.com/danvick/flutter_chips_input/issues/34#issuecomment-684505282). TODO: Find permanent fix
-    _textInputConnection ??= TextInput.attach(this, textInputConfiguration);
-    _textInputConnection?.setEditingState(_value);
-  }
-
-  @override
-  void performAction(TextInputAction action) {
-    switch (action) {
-      case TextInputAction.done:
-      case TextInputAction.go:
-      case TextInputAction.send:
-      case TextInputAction.search:
-        if (_suggestions?.isNotEmpty ?? false) {
-          selectSuggestion(_suggestions!.first as T);
-        } else {
-          _effectiveFocusNode.unfocus();
-        }
-        break;
-      default:
-        _effectiveFocusNode.unfocus();
-        break;
-    }
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _effectiveFocusNode.canRequestFocus = _canRequestFocus;
-  }
-
-  @override
-  void performPrivateCommand(String action, Map<String, dynamic> data) {
-    //TODO
-  }
-
-  @override
-  void didUpdateWidget(covariant ChipsInput<T> oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    _effectiveFocusNode.canRequestFocus = _canRequestFocus;
-  }
-
-  @override
-  void updateFloatingCursor(RawFloatingCursorPoint point) {
-    // print(point);
+  Widget build(BuildContext context) {
+    return Focus(
+      focusNode: _effectiveFocusNode,
+      child: GestureDetector(
+        onTap: requestKeyboard,
+        child: CompositedTransformTarget(
+          link: _layerLink,
+          child: InputDecorator(
+            decoration: widget.decoration.copyWith(
+              hintText: widget.decoration.hintText,
+              enabled: widget.enabled,
+            ),
+            child: Row(
+              children: [
+                ..._chips.map((e) => widget.chipBuilder(context, this, e)),
+                Flexible(
+                  child: TextField(
+                    controller: TextEditingController.fromValue(_value),
+                    focusNode: _effectiveFocusNode,
+                    decoration: InputDecoration(
+                      border: InputBorder.none,
+                    ),
+                    style: widget.textStyle,
+                    onChanged: _onSearchChanged,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   void connectionClosed() {
-    //print('TextInputClient.connectionClosed()');
+    // TODO: implement connectionClosed
   }
-
+  
   @override
-  TextEditingValue get currentTextEditingValue => _value;
-
+  // TODO: implement currentAutofillScope
+  AutofillScope? get currentAutofillScope => throw UnimplementedError();
+  
   @override
-  void showAutocorrectionPromptRect(int start, int end) {}
-
+  // TODO: implement currentTextEditingValue
+  TextEditingValue? get currentTextEditingValue => throw UnimplementedError();
+  
   @override
-  AutofillScope? get currentAutofillScope => null;
-
-  @override
-  Widget build(BuildContext context) {
-    _nodeAttachment.reparent();
-    final chipsChildren = _chips
-        .map<Widget>((data) => widget.chipBuilder(context, this, data))
-        .toList();
-
-    final theme = Theme.of(context);
-
-    chipsChildren.add(
-      SizedBox(
-        height: 30.0,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: <Widget>[
-            Flexible(
-              flex: 1,
-              child: Text(
-                _value.normalCharactersText,
-                maxLines: 1,
-                overflow: widget.textOverflow,
-                style: widget.textStyle ??
-                    theme.textTheme.bodyLarge!.copyWith(height: 1.5),
-              ),
-            ),
-            Flexible(
-              flex: 0,
-              child: TextCursor(resumed: _effectiveFocusNode.hasFocus),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    return NotificationListener<SizeChangedLayoutNotification>(
-      onNotification: (SizeChangedLayoutNotification val) {
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          _suggestionsBoxController.overlayEntry?.markNeedsBuild();
-        });
-        return true;
-      },
-      child: SizeChangedLayoutNotifier(
-        child: Column(
-          children: <Widget>[
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () {
-                requestKeyboard();
-              },
-              child: InputDecorator(
-                decoration: widget.decoration,
-                isFocused: _effectiveFocusNode.hasFocus,
-                isEmpty: _value.text.isEmpty && _chips.isEmpty,
-                child: Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 4.0,
-                  runSpacing: 4.0,
-                  children: chipsChildren,
-                ),
-              ),
-            ),
-            CompositedTransformTarget(
-              link: _layerLink,
-              child: Container(),
-            ),
-          ],
-        ),
-      ),
-    );
+  void insertTextPlaceholder(Size size) {
+    // TODO: implement insertTextPlaceholder
   }
-
+  
   @override
-  void showToolbar() {}
-
-  @override
-  void insertTextPlaceholder(Size size) {}
-
-  @override
-  void removeTextPlaceholder() {}
-
-  @override
-  void didChangeInputControl(TextInputControl? oldControl, TextInputControl? newControl) {
-
+  void performAction(TextInputAction action) {
+    // TODO: implement performAction
   }
-
+  
   @override
-  void insertContent(KeyboardInsertedContent content) {
-   
+  void performPrivateCommand(String action, Map<String, dynamic> data) {
+    // TODO: implement performPrivateCommand
   }
-
+  
   @override
-  void performSelector(String selectorName) {
-   
-  }  
+  void removeTextPlaceholder() {
+    // TODO: implement removeTextPlaceholder
+  }
+  
+  @override
+  void showAutocorrectionPromptRect(int start, int end) {
+    // TODO: implement showAutocorrectionPromptRect
+  }
+  
+  @override
+  void showToolbar() {
+    // TODO: implement showToolbar
+  }
+  
+  @override
+  void updateEditingValue(TextEditingValue value) {
+    // TODO: implement updateEditingValue
+  }
+  
+  @override
+  void updateFloatingCursor(RawFloatingCursorPoint point) {
+    // TODO: implement updateFloatingCursor
+  }
 }
